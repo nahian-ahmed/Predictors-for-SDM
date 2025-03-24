@@ -8,20 +8,42 @@
 # name for model outputs.
 # UPDATED 06/09/2020 by Laurel Hopkins: Adding code to parallelize species and models 
 # (environmental variables)
+# UPDATED 03/21/2025 by Nahian Ahmed: Refactor script to callable function
 #################################################################################################
 
 # If running from RStudio, set get.inputs to FALSE and set the model and species on line 71 & 72.
 # Otherwise, set get.inputs to TRUE and run the script with:
 # R run_model.R --species "Ash-throated Flycatcher" --model "nlcd_binary_all_classes"
-get.inputs <- FALSE  
+get.inputs <- FALSE 
+
+
+
+
+
+f_path <- paste0("results/", model) 
+if (!dir.exists(f_path)) {
+        dir.create(f_path)
+}
+f_path <- paste0("results/", model, "/", species) 
+if (!dir.exists(f_path)) {
+        dir.create(f_path)
+}
 
 model.buffers <- c(75, 600, 2400)
 model.seasons <- c("summer", "spring", "fall")
 model.segmentation <- "nbr"
+
+
 model.summaries <- "mean_stdDev"  #"mean"
+model.textures = TRUE
+
+if (model == "embedding_fields"){
+  model.summaries <- ""
+  model.textures <- FALSE
+}
 
 ###### Set paths ###### 
-Working.directory <-"C:\\Users\\Laurel\\Documents\\Oregon State\\Research\\ICB\\" # This is if I'm running it on my computer
+# Working.directory <-"C:\\Users\\Laurel\\Documents\\Oregon State\\Research\\ICB\\" # This is if I'm running it on my computer
 
 
 #########################################################
@@ -49,40 +71,51 @@ library(blockCV)
 
 ###### File Names ###### 
 # Environmental files
-environmental_file <- "Landsat_buffered_summaries"
-modis_file <- "MODIS_MCD12Q1_proportions.csv"
-nlcd_file <- "NLCD2016_proportions.csv"
-nlcd_binary_file <- "NLCD2016_binary_indicators.csv"
+environmental_file <- "data/Landsat_buffered_summaries.csv"
+modis_file <- "data/MODIS_MCD12Q1_proportions.csv"
+nlcd_file <- "data/NLCD2016_proportions.csv"
+nlcd_binary_file <- "data/NLCD2016_binary_indicators.csv"
+embedding_fields_file <- "data/OR2020_SpeciesRecords_EmbeddingFields.csv"
 
-# Species counts
-species_file <- "Ash-throated_Flycatcher_species_counts.csv"
+# Species occurrence
+species_file <- "data/OR2020_SpeciesRecords.csv"
+
+
+
+sep_line_len <- 40
+
+cat("\n")
+cat(strrep("-", sep_line_len), "\n")
+cat(strrep("-", sep_line_len), "\n")
+cat("Model: ", model, "\n")
+cat("Species: ", species, "\n")
+cat(strrep("-", sep_line_len), "\n\n")
+
 
 # blockCV spatial split
-blockCV_file <- "sb1_Ash-throated_Flycatcher.RData"
+# blockCV_file <- "sb1_Ash-throated_Flycatcher.RData"
 
 
 ###### Model parameters ######
-if (model.params){
-  option_list <- list(
-    make_option("--model", action="store", default=NA, type="character", 
-                metavar="model", help="Model to run (i.e. RS indices)"),
-    make_option("--species", action="store", default=NA, type="character",
-                metavar="species", help="Species to analyze")
-  )
-  args <- parse_args(OptionParser(option_list = option_list))
+# if (model.params){
+#   option_list <- list(
+#     make_option("--model", action="store", default=NA, type="character", 
+#                 metavar="model", help="Model to run (i.e. RS indices)"),
+#     make_option("--species", action="store", default=NA, type="character",
+#                 metavar="species", help="Species to analyze")
+#   )
+#   args <- parse_args(OptionParser(option_list = option_list))
   
-  model <- args$model
-  species <- args$species
+#   model <- args$model
+#   species <- args$species
 
-} else { # define  manually 
+# } else { # define  manually 
   
-  # Model options: "raw_bands", "tasseled_cap", "ndvi", "ndmi", "nbr", "nbr_2", "evi", "savi", "msavi", "ndsi"
-  model <- "raw_bands" 
-  species <- "Ash-throated Flycatcher"
-}
+#   # Model options: "raw_bands", "tasseled_cap", "ndvi", "ndmi", "nbr", "nbr_2", "evi", "savi", "msavi", "ndsi"
+#   model <- "raw_bands" 
+#   species <- "Ash-throated Flycatcher"
+# }
 
-print(paste0("Model: ", model))
-print(paste0("Species: ", species)) 
 
 
 #########################################################
@@ -90,13 +123,18 @@ print(paste0("Species: ", species))
 #########################################################
 
 ###### Set the working directory ######
-setwd(Working.directory)
+# setwd(Working.directory)
 
-print(blockCV_file)
+
 
 ###### Load species data ######
 
 bird_data <- read.csv(file=species_file, header=TRUE, sep=",", dec=".", stringsAsFactors=FALSE, fill=TRUE)
+
+
+bird_data <- bird_data[,c("Unique_Checklist_ID", "Fold", make.names(species))]
+colnames(bird_data) <- c("Unique_Checklist_ID", "Fold", "Occur")
+
 
 ###### Load environmental data ######
 if (model == "modis") {
@@ -106,12 +144,18 @@ if (model == "modis") {
   environ_data <- read.csv(file=nlcd_file, header=TRUE, sep=",", dec=".", stringsAsFactors=FALSE, fill=TRUE)
 } else if (model == "nlcd_binary") {
   environ_data <- read.csv(file=nlcd_binary_file, header=TRUE, sep=",", dec=".", stringsAsFactors=FALSE, fill=TRUE)
+} else if (model == "embedding_fields"){
+  environ_data <- read.csv(file=embedding_fields_file, header=TRUE, sep=",", dec=".", stringsAsFactors=FALSE, fill=TRUE)
 } else {
   environ_data <- read.csv(file=environmental_file, header=TRUE, sep=",", dec=".", stringsAsFactors=FALSE, fill=TRUE)
 }
 
+# print(colnames(environ_data))
+
+
+
 ###### Load BlockCV data ######
-load(blockCV_file)
+# load(blockCV_file)
 
 
 #########################################################
@@ -185,6 +229,12 @@ if (model == "raw_bands") {
                     "Emergent_Herbaceous_Wetlands", "Evergreen_Forest", "Grassland_Herbaceous",	
                     "Mixed_Forest", "Open_Water", "Pasture_Hay", "Perennial_Ice_Snow", "Shrub_Scrub",	
                     "Woody_Wetlands")
+} else if (model == "embedding_fields") {
+  model.indices <- c("A00", "A01", "A02", "A03", "A04", "A05", "A06", "A07", "A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15",
+                    "A16", "A17", "A18", "A19", "A20", "A21", "A22", "A23", "A24", "A25", "A26", "A27", "A28", "A29", "A30", "A31",
+                    "A32", "A33", "A34", "A35", "A36", "A37", "A38", "A39", "A40", "A41", "A42", "A43", "A44", "A45", "A46", "A47",
+                    "A48", "A49", "A50", "A51", "A52", "A53", "A54", "A55", "A56", "A57", "A58", "A59", "A60", "A61", "A62", "A63")
+                    
 } else {
   print("Misidentified feature set")
   stop()
@@ -207,7 +257,7 @@ if (model.summaries == "mean_stdDev") { # also include standard deviations
 }
 
 # Select the indices and checklist ID
-if (model == "modis") {
+if (model == "modis" | model == "embedding_fields") {
   model.variables <- model.indices
 } else if (model == "nlcd" | model == "nlcd_binary") {
   model.variables <- c()
@@ -223,12 +273,13 @@ if (model == "modis") {
     }
   }
 }
-print(model.variables)
+
 
 ###### Merge with counts and fold IDs ######
 data <- merge(bird_data, environ_data[,c("Unique_Checklist_ID", model.variables)], by = "Unique_Checklist_ID")
-data$Fold <- sb1$foldID 
+# data$Fold <- sb1$foldID 
 data <- na.omit(data)
+
 
 #########################################################
 # 7. Run models
@@ -238,8 +289,6 @@ data <- na.omit(data)
 data$Occur <- as.factor(data$Occur) 
 
 ###### Prep to run models on each fold ###### 
-# Extract fold IDs
-folds <- data$Fold
 
 # create a data.frame to store the predictions
 testTable <- data[,c("Unique_Checklist_ID", "Fold", "Occur")]
@@ -250,9 +299,11 @@ num_predictors <- length(model.variables)
 # We'll use 2/3 of the presences and an equal sized sample of absences. We're doing this to compensate
 # for the extreme class imbalance, rather than applying a downsampling scheme to address the imbalance. 
 num_pres <- nrow(data[data$Occur==1,])
-print("nrow(data[data$Occur==1,]):")
-print(num_pres)
-print(dim(data))
+
+cat("Number of Presences: ", num_pres, "\n")
+cat("Number of Instances: ", dim(data)[1], "\n")
+cat("Prevalence: ", round((num_pres / dim(data)[1]), 4), "\n")
+cat("Number of Predictors: ", num_predictors, "\n\n")
 sampleSize = floor((2/3) * num_pres)
 
 #full.variable.table <- data.frame(rn = NA, MeanDecreaseAccuracy = NA, k=NA)
@@ -260,9 +311,12 @@ sampleSize = floor((2/3) * num_pres)
 ###### Run models on each fold ###### 
 predictors <- which(names(data) %in% model.variables)
 
-for(k in seq_len(length(unique(folds)))){ 
-  trainSet <- which(folds != k) # training set indices
-  testSet <- which(folds == k) # testing set indices
+for(k in seq_len(length(unique(data$Fold)))){
+
+  cat("Repeat: ", k, "/", length(unique(data$Fold)), "\n")
+
+  trainSet <- which(data$Fold != k) # training set indices
+  testSet <- which(data$Fold == k) # testing set indices
   
   rf <- randomForest(data[trainSet, predictors], factor(data[trainSet, "Occur"]), ntree = 5000, 
                      sampsize=c(sampleSize, sampleSize))  #importance = TRUE
@@ -286,11 +340,14 @@ for(k in seq_len(length(unique(folds)))){
   #dev.off()
 }
 
+
+
 # save predictions (testTable)
-save(testTable, file = paste0(species, "_", model, "_", name, ".RData"))
+save(testTable, file = paste0("results/", model, "/", species, "/" ,species, "_", model, ".RData"))
 
 # save model
 #save(rf, file = paste0(species, "_", model, "_rf_model.RData"))
+
 
 
 ###### Assess Variable Importance ###### 
@@ -302,3 +359,8 @@ save(testTable, file = paste0(species, "_", model, "_", name, ".RData"))
 #names(variable.import.aggregated) <- c("EnvironmentalVariable", "MeanDecreaseAccuracy", "SDDecreaseAccuracy")
 #write.csv(full.variable.table, paste0("VariableImportanceFullFolds_", model, ".csv"), row.names = FALSE)
 #write.csv(variable.import.aggregated, paste0("VariableImportanceSummary_", model, ".csv"), row.names = FALSE)
+
+
+
+cat("\n")
+cat(strrep("-", sep_line_len), "\n\n")
